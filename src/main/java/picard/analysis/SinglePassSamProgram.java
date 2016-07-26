@@ -151,7 +151,21 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
 
             @Override
             public void run() {
+                while (true) {
+                    try {
+                        List<Object[]> tmpPairs = queue.take();
 
+                        // TODO: poison pill check
+
+                        for (Object[] pair : tmpPairs) {
+                            program.acceptRead((SAMRecord) pair[0], (ReferenceSequence) pair[1]);
+                        }
+
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+
+                }
             }
         }
 
@@ -161,6 +175,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
             ParallelProgress newProgress = new ParallelProgress(program);
             progressList.add(newProgress);
             service.execute(newProgress);
+            System.out.println("Program submitted");
         }
 
 
@@ -188,7 +203,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
 
 
             //for()
-
+            System.out.println("pairs to submit: " + pairs.size());
 
             for (ParallelProgress parallelProgram : progressList) {
                 try {
@@ -197,7 +212,6 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
                     e.printStackTrace();
                 }
             }
-            //TODO отдельные потоки
 
             pairs = new ArrayList<>();
 
@@ -217,6 +231,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
             }
         }
 
+        // TODO: add poison pill
         //TODO add shutdown and awaitTerm
 
         CloserUtil.close(in);
