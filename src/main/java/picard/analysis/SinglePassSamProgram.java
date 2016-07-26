@@ -42,10 +42,7 @@ import picard.cmdline.Option;
 import picard.cmdline.StandardOptionDefinitions;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.*;
 
 /**
@@ -129,14 +126,15 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
 
         final ProgressLogger progress = new ProgressLogger(log);
 
-        final Integer MAX_PAIRS = 900;
+        final Integer MAX_PAIRS = 500;
         final Integer QUEUE_CAPACITY = 100;
+        Semaphore isProcess = new Semaphore(programs.size());
         Long CounterOfReads = new Long(0);
 
         List<Object[]> pairs = new ArrayList<Object[]>(MAX_PAIRS);
 
 
-        ExecutorService service = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+        ExecutorService service = Executors.newFixedThreadPool(programs.size());
 
         class ParallelProgress implements Runnable {
 
@@ -151,11 +149,19 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
 
             @Override
             public void run() {
+                try {
+                    isProcess.acquire(1);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
                 while (true) {
                     try {
                         List<Object[]> tmpPairs = queue.take();
 
-                        // TODO: poison pill check
+                        if (tmpPairs.isEmpty()) {
+                            isProcess.release();
+                            return;
+                        }
 
                         for (Object[] pair : tmpPairs) {
                             program.acceptRead((SAMRecord) pair[0], (ReferenceSequence) pair[1]);
@@ -171,11 +177,12 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
 
         List<ParallelProgress> progressList = new ArrayList<ParallelProgress>();
 
+
         for (final SinglePassSamProgram program : programs) {
             ParallelProgress newProgress = new ParallelProgress(program);
             progressList.add(newProgress);
             service.execute(newProgress);
-            System.out.println("Program submitted");
+            //System.out.println("Program submitted");
         }
 
 
@@ -202,8 +209,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
             }
 
 
-            //for()
-            System.out.println("pairs to submit: " + pairs.size());
+            // System.out.println("pairs to submit: " + pairs.size());
 
             for (ParallelProgress parallelProgram : progressList) {
                 try {
@@ -225,10 +231,34 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
             if (!anyUseNoRefReads && rec.getReferenceIndex() == SAMRecord.NO_ALIGNMENT_REFERENCE_INDEX) {
                 break;
             }
-            
         }
 
-        // TODO: add poison pill
+        if (!pairs.isEmpty()) {
+            for (ParallelProgress parallelProgram : progressList) {
+                try {
+                    parallelProgram.queue.put(pairs);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        for (ParallelProgress parallelProgram : progressList) {
+            try {
+                parallelProgram.queue.put(Collections.emptyList());
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        try {
+            isProcess.acquire(programs.size());
+            service.shutdown();
+            service.awaitTermination(1, TimeUnit.DAYS);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
         //TODO add shutdown and awaitTerm
 
         CloserUtil.close(in);
