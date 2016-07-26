@@ -138,7 +138,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
                 ref = walker.get(rec.getReferenceIndex());
             }
 
-            ExecutorService service = Executors.newCachedThreadPool();
+            ExecutorService service = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
 
             Runnable ParallelProgress = () -> {
@@ -147,6 +147,11 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
                 }
 
                 progress.record(rec);
+
+                if (stopAfter > 0 && progress.getCount() >= stopAfter) {
+                    service.shutdown();
+                }
+
             };
 
             service.submit(ParallelProgress);
