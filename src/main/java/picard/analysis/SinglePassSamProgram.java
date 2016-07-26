@@ -44,6 +44,10 @@ import picard.cmdline.StandardOptionDefinitions;
 import java.io.File;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RunnableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Super class that is designed to provide some consistent structure between subclasses that
@@ -134,11 +138,27 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
                 ref = walker.get(rec.getReferenceIndex());
             }
 
-            for (final SinglePassSamProgram program : programs) {
-                program.acceptRead(rec, ref);
+            ExecutorService service = Executors.newCachedThreadPool();
+
+
+            Runnable ParallelProgress = () -> {
+                for (final SinglePassSamProgram program : programs) {
+                    program.acceptRead(rec, ref);
+                }
+
+                progress.record(rec);
+            };
+
+            service.submit(ParallelProgress);
+
+            service.shutdown();
+
+            try {
+                service.awaitTermination(1, TimeUnit.DAYS);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
 
-            progress.record(rec);
 
             // See if we need to terminate early?
             if (stopAfter > 0 && progress.getCount() >= stopAfter) {
@@ -158,10 +178,16 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
         }
     }
 
-    /** Can be overriden and set to false if the section of unmapped reads at the end of the file isn't needed. */
-    protected boolean usesNoRefReads() { return true; }
+    /**
+     * Can be overriden and set to false if the section of unmapped reads at the end of the file isn't needed.
+     */
+    protected boolean usesNoRefReads() {
+        return true;
+    }
 
-    /** Should be implemented by subclasses to do one-time initialization work. */
+    /**
+     * Should be implemented by subclasses to do one-time initialization work.
+     */
     protected abstract void setup(final SAMFileHeader header, final File samFile);
 
     /**
@@ -171,7 +197,9 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
      */
     protected abstract void acceptRead(final SAMRecord rec, final ReferenceSequence ref);
 
-    /** Should be implemented by subclasses to do one-time finalization work. */
+    /**
+     * Should be implemented by subclasses to do one-time finalization work.
+     */
     protected abstract void finish();
 
 }
