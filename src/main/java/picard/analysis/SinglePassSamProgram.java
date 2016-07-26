@@ -42,12 +42,11 @@ import picard.cmdline.Option;
 import picard.cmdline.StandardOptionDefinitions;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.RunnableFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.List;
+import java.util.concurrent.*;
 
 /**
  * Super class that is designed to provide some consistent structure between subclasses that
@@ -130,6 +129,41 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
 
         final ProgressLogger progress = new ProgressLogger(log);
 
+        final Integer MAX_PAIRS = 500;
+        final Integer QUEUE_CAPACITY = 100;
+        Long CounterOfReads = new Long(0);
+
+        List<Object[]> pairs = new ArrayList<Object[]>(MAX_PAIRS);
+
+
+        ExecutorService service = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+
+        class ParallelProgress implements Runnable {
+
+            SinglePassSamProgram program;
+
+            ParallelProgress(SinglePassSamProgram program) {
+                this.program = program;
+            }
+
+            final BlockingQueue<List<Object[]>> queue = new LinkedBlockingQueue<List<Object[]>>(
+                    QUEUE_CAPACITY);
+
+            @Override
+            public void run() {
+
+            }
+        }
+
+        List<ParallelProgress> progressList = new ArrayList<ParallelProgress>();
+
+        for (final SinglePassSamProgram program : programs) {
+            ParallelProgress newProgress = new ParallelProgress(program);
+            progressList.add(newProgress);
+            service.execute(newProgress);
+        }
+
+
         for (final SAMRecord rec : in) {
             final ReferenceSequence ref;
             if (walker == null || rec.getReferenceIndex() == SAMRecord.NO_ALIGNMENT_REFERENCE_INDEX) {
@@ -138,31 +172,34 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
                 ref = walker.get(rec.getReferenceIndex());
             }
 
-            ExecutorService service = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+            pairs.add(new Object[]{rec, ref});
+            CounterOfReads++;
+
+            progress.record(rec);
 
 
-            Runnable ParallelProgress = () -> {
-                for (final SinglePassSamProgram program : programs) {
-                    program.acceptRead(rec, ref);
-                }
-
-                progress.record(rec);
-
-                if (stopAfter > 0 && progress.getCount() >= stopAfter) {
-                    service.shutdown();
-                }
-
-            };
-
-            service.submit(ParallelProgress);
-
-            service.shutdown();
-
-            try {
-                service.awaitTermination(1, TimeUnit.DAYS);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+            if (stopAfter > 0 && progress.getCount() >= stopAfter) {
+                break;
             }
+
+            if ((pairs.size() < MAX_PAIRS) && (stopAfter > 0) && (stopAfter > CounterOfReads)) {
+                continue;
+            }
+
+
+            //for()
+
+
+            for (ParallelProgress parallelProgram : progressList) {
+                try {
+                    parallelProgram.queue.put(pairs);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            //TODO отдельные потоки
+
+            pairs = new ArrayList<>();
 
 
             // See if we need to terminate early?
@@ -174,7 +211,13 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
             if (!anyUseNoRefReads && rec.getReferenceIndex() == SAMRecord.NO_ALIGNMENT_REFERENCE_INDEX) {
                 break;
             }
+
+            for (final SinglePassSamProgram program : programs) {
+                program.acceptRead(rec, ref);
+            }
         }
+
+        //TODO add shutdown and awaitTerm
 
         CloserUtil.close(in);
 
