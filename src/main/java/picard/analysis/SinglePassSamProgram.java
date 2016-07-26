@@ -129,7 +129,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
 
         final ProgressLogger progress = new ProgressLogger(log);
 
-        final Integer MAX_PAIRS = 500;
+        final Integer MAX_PAIRS = 900;
         final Integer QUEUE_CAPACITY = 100;
         Long CounterOfReads = new Long(0);
 
@@ -225,10 +225,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
             if (!anyUseNoRefReads && rec.getReferenceIndex() == SAMRecord.NO_ALIGNMENT_REFERENCE_INDEX) {
                 break;
             }
-
-            for (final SinglePassSamProgram program : programs) {
-                program.acceptRead(rec, ref);
-            }
+            
         }
 
         // TODO: add poison pill
