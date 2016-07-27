@@ -131,16 +131,16 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
         Semaphore isProcess = new Semaphore(programs.size());
         Long CounterOfReads = new Long(0);
 
-        List<Object[]> pairs = new ArrayList<Object[]>(MAX_PAIRS);
+        List<Object[]> pairs = new ArrayList<>(MAX_PAIRS);
 
 
         ExecutorService service = Executors.newFixedThreadPool(programs.size());
 
-        class ParallelProgress implements Runnable {
+        class ParallelExecute implements Runnable {
 
             SinglePassSamProgram program;
 
-            ParallelProgress(SinglePassSamProgram program) {
+            ParallelExecute(SinglePassSamProgram program) {
                 this.program = program;
             }
 
@@ -175,14 +175,13 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
             }
         }
 
-        List<ParallelProgress> progressList = new ArrayList<ParallelProgress>();
+        List<ParallelExecute> progressList = new ArrayList<ParallelExecute>();
 
 
         for (final SinglePassSamProgram program : programs) {
-            ParallelProgress newProgress = new ParallelProgress(program);
-            progressList.add(newProgress);
-            service.execute(newProgress);
-            //System.out.println("Program submitted");
+            ParallelExecute newExec = new ParallelExecute(program);
+            progressList.add(newExec);
+            service.execute(newExec);
         }
 
 
@@ -195,6 +194,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
             }
 
             pairs.add(new Object[]{rec, ref});
+            
             CounterOfReads++;
 
             progress.record(rec);
@@ -211,7 +211,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
 
             // System.out.println("pairs to submit: " + pairs.size());
 
-            for (ParallelProgress parallelProgram : progressList) {
+            for (ParallelExecute parallelProgram : progressList) {
                 try {
                     parallelProgram.queue.put(pairs);
                 } catch (InterruptedException e) {
@@ -234,7 +234,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
         }
 
         if (!pairs.isEmpty()) {
-            for (ParallelProgress parallelProgram : progressList) {
+            for (ParallelExecute parallelProgram : progressList) {
                 try {
                     parallelProgram.queue.put(pairs);
                 } catch (InterruptedException e) {
@@ -243,7 +243,7 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
             }
         }
 
-        for (ParallelProgress parallelProgram : progressList) {
+        for (ParallelExecute parallelProgram : progressList) {
             try {
                 parallelProgram.queue.put(Collections.emptyList());
             } catch (InterruptedException e) {
@@ -259,7 +259,6 @@ public abstract class SinglePassSamProgram extends CommandLineProgram {
             e.printStackTrace();
         }
 
-        //TODO add shutdown and awaitTerm
 
         CloserUtil.close(in);
 
